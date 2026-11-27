@@ -1,0 +1,44 @@
+# myvouch.es rate-limits Cloudflare Worker IPs (HTTP 429), so the Worker can't fetch the vouches
+# itself. This job fetches them from GitHub's network every hour and posts the HTML to the
+# Worker's /ingest endpoint, which parses it and stores the result in KV.
+name: Sync vouches
+
+on:
+  schedule:
+    - cron: "17 * * * *" # hourly (GitHub may delay scheduled runs)
+    - cron: "0 3 1 * *"  # monthly keep-alive (see below)
+  workflow_dispatch:
+
+jobs:
+  # GitHub pauses scheduled workflows in public repos after 60 days without commits.
+  # Re-enabling the workflow through the API once a month keeps the schedule alive.
+  keepalive:
+    if: github.event.schedule == '0 3 1 * *'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/sync-vouches.yml/enable"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  sync:
+    if: github.event.schedule != '0 3 1 * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fetch myvouch.es
+        run: |
+          code=$(curl -sS -A "Mozilla/5.0" --retry 3 --retry-delay 20 -o vouches.html -w '%{http_code}' \
+            https://myvouch.es/api/darkify/vouches/embed)
+          echo "HTTP $code, $(wc -c < vouches.html) bytes, $(grep -o 'class="swiper-slide"' vouches.html | wc -l) slides"
+          [ "$code" = 200 ]
+
+      - name: Send to Worker
+        env:
+          INGEST_TOKEN: ${{ secrets.INGEST_TOKEN }}
+        run: |
+          curl -sS --fail-with-body -X POST \
+            -H "Authorization: Bearer $INGEST_TOKEN" -H "Content-Type: text/html" \
+            --data-binary @vouches.html \
+            https://wispy-block-c5fc.vladmiticus.workers.dev/ingest

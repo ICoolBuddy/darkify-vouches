@@ -1,0 +1,16 @@
+# Deploy: npx wrangler deploy   (secrets ZENYTH_API_KEY, DARKIFY_API_KEY, INGEST_TOKEN live in Cloudflare)
+name = "wispy-block-c5fc"
+main = "worker.js"
+compatibility_date = "2026-01-03"
+workers_dev = true
+preview_urls = false
+
+[[kv_namespaces]]
+binding = "VOUCHES"
+id = "3006cd02424046278de3c224a40b72f6"
+
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
